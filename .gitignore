@@ -1,3 +1,6 @@
+#osx
+*.DS_store
+
 # Compiled Object files
 *.slo
 *.lo
