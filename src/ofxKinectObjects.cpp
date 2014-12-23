@@ -12,10 +12,11 @@ namespace ofxKinectObjects {
     /***
      OBJECTS
      **___________________________________*/
-    FloorObject::FloorObject(float area, ofVec3f worldCoordinates){
+    FloorObject::FloorObject(float area, ofVec3f worldCoordinates, vector<ofPoint> quad){
         area_ = area;
         touchedBy_ = 0;
         //touched_ = false;
+        quad_ = quad;
         worldCoordinates_ = worldCoordinates;
         ofAddListener(HandOnEvent::events, this, &FloorObject::handOn);
         ofAddListener(HandOutEvent::events, this, &FloorObject::handOut);
@@ -27,6 +28,10 @@ namespace ofxKinectObjects {
     
     void FloorObject::setArea(float area){
         area_ = area;
+    }
+    
+    void FloorObject::setQuad(vector<ofPoint> quad){
+        quad_ = quad;
     }
     
     void FloorObject::setWorldCoordinates(ofVec3f worldCoordinates){
@@ -66,9 +71,10 @@ namespace ofxKinectObjects {
         //    - other hand --> nothing
         //    - same hand & distance > lim --> untouch
         
-        if (touchedBy_ == 0 && (e.worldCoordinates.distance(worldCoordinates_) < 100)) {
+        //if (touchedBy_ == 0 && (e.worldCoordinates.distance(worldCoordinates_) < 100)) {
+        if (touchedBy_ == 0 && (quadIntersects(e.quad))) {
             touch(e.handLabel);
-        } else if (touchedBy_ == e.handLabel && (e.worldCoordinates.distance(worldCoordinates_) >= 100)){
+        } else if (touchedBy_ == e.handLabel && !(quadIntersects(e.quad))){
             touch(0);
         }
     }
@@ -77,6 +83,17 @@ namespace ofxKinectObjects {
         if (e.handLabel == touchedBy_) {
             touch(0);
         }
+    }
+    
+    bool FloorObject::quadIntersects(vector<ofVec3f> quad){
+        ofPolyline polygon;
+        polygon.addVertices(quad_);
+        for (int i = 0; i < quad.size(); i++) {
+            if (polygon.inside(quad[0]) || polygon.inside(quad[1]) || polygon.inside(quad[2]) || polygon.inside(quad[3]) ) {
+                return true;
+            }
+        }
+        return false;
     }
     
     /***
@@ -167,7 +184,6 @@ namespace ofxKinectObjects {
             
             // find contours which are between the size of 20 pixels and 1/3 the w*h pixels.
             // also, find holes is set to true so we will get interior contours as well....
-            //contourFinder.findContours(grayImage, 10, (kinect.width*kinect.height)/2, 20, false);
             objectsFinder.setMinArea(objectsBlobSize_.x);
             objectsFinder.setMaxArea(objectsBlobSize_.y);
             objectsFinder.findContours(objectsImage);
@@ -175,8 +191,6 @@ namespace ofxKinectObjects {
             handsFinder.setMinArea(handsBlobSize_.x);
             handsFinder.setMaxArea(handsBlobSize_.y);
             handsFinder.findContours(handsImage);
-            
-            //ObjectTracker().update(objectsFinder, handsFinder, kinect);
         }
         
     #ifdef USE_TWO_KINECTS
@@ -188,10 +202,11 @@ namespace ofxKinectObjects {
         
         for (int i = 0; i < objectsFinder.size(); ++i) {
             objectIds.push_back(objectsFinder.getLabel(i));
+
             
-            vector<cv::Point> quads = objectsFinder.getFitQuad(i);
-            float currentArea = kinect.getWorldCoordinateAt(quads[0].x, quads[0].y).distance(kinect.getWorldCoordinateAt(quads[1].x, quads[1].y))
-            + kinect.getWorldCoordinateAt(quads[1].x, quads[1].y).distance(kinect.getWorldCoordinateAt(quads[2].x, quads[2].y));
+            vector<cv::Point> quad = objectsFinder.getFitQuad(i);
+            float currentArea = kinect.getWorldCoordinateAt(quad[0].x, quad[0].y).distance(kinect.getWorldCoordinateAt(quad[1].x, quad[1].y))
+            + kinect.getWorldCoordinateAt(quad[1].x, quad[1].y).distance(kinect.getWorldCoordinateAt(quad[2].x, quad[2].y));
             
             //Object already exists
             if (objects.find(objectsFinder.getLabel(i)) != objects.end()) {
@@ -200,13 +215,12 @@ namespace ofxKinectObjects {
                 if (currentArea > objects[objectsFinder.getLabel(i)]->getArea()) {
                     objects[objectsFinder.getLabel(i)]->setArea(currentArea);
                 }
-                objects[objectsFinder.getLabel(i)]->setWorldCoordinates(kinect.getWorldCoordinateAt(objectsFinder.getCentroid(i).x, objectsFinder.getCentroid(i).y));
+                objects[objectsFinder.getLabel(i)]->setQuad(ofxCvPointQuadToOfPointQuad(objectsFinder.getFitQuad(i)));
             }
             //object doesn't exist
             else {
                 //insert new object
-                //FloorObject newObject(currentArea, kinect.getWorldCoordinateAt(objectsFinder.getCentroid(i).x, objectsFinder.getCentroid(i).y));
-                FloorObject* newObject = new FloorObject(currentArea, kinect.getWorldCoordinateAt(objectsFinder.getCentroid(i).x, objectsFinder.getCentroid(i).y));
+                FloorObject* newObject = new FloorObject(currentArea, kinect.getWorldCoordinateAt(objectsFinder.getCentroid(i).x, objectsFinder.getCentroid(i).y), ofxCvPointQuadToOfPointQuad(objectsFinder.getFitQuad(i)));
                 objects[objectsFinder.getLabel(i)] = newObject;
             }
             
@@ -226,10 +240,8 @@ namespace ofxKinectObjects {
         
         for (int i = 0; i < handsFinder.size(); ++i) {
             static HandOnEvent newEvent;
+            newEvent.quad = ofxCvPointQuadToOfPointQuad(handsFinder.getFitQuad(i));
             newEvent.handLabel = handsFinder.getLabel(i);
-            newEvent.center.x = handsFinder.getCentroid(i).x;
-            newEvent.center.y = handsFinder.getCentroid(i).y;
-            newEvent.worldCoordinates = kinect.getWorldCoordinateAt(handsFinder.getCentroid(i).x, handsFinder.getCentroid(i).y);
             ofNotifyEvent(HandOnEvent::events, newEvent);
         }
         
@@ -239,34 +251,6 @@ namespace ofxKinectObjects {
             ofNotifyEvent(HandOutEvent::events, newEvent);
         }
     }
-
-
-   /* void ObjectTracker::draw()
-    {
-
-        // draw instructions
-        ofSetColor(255, 0, 0);
-        stringstream reportStream;
-        
-        if (bCalibratingBackground){
-            reportStream << "Choose 3 corners!";
-        }
-        else {
-            if(kinect.hasAccelControl()) {
-                reportStream << "accel is: " << ofToString(kinect.getMksAccel().x, 2) << " / "
-                << ofToString(kinect.getMksAccel().y, 2) << " / "
-                << ofToString(kinect.getMksAccel().z, 2) << endl;
-            } else {
-                reportStream << "Note: this is a newer Xbox Kinect or Kinect For Windows device," << endl
-                << "motor / led / accel controls are not currently supported" << endl << endl;
-            }
-            reportStream << "press b to calibrate background" << endl
-            << "fps: " << ofGetFrameRate() << endl
-            << "press c to close the connection and o to open it again, connection is: " << kinect.isConnected() << endl;
-        }
-        
-        ofDrawBitmapString(reportStream.str(), 20, 652);
-    }*/
     
     //--------------------------------------------------------------
     void ObjectTracker::drawObjectDetector(int x, int y, int w, int h){
@@ -300,6 +284,8 @@ namespace ofxKinectObjects {
             }
             ofDrawBitmapString(ofToString(realArea), x_obj, y_obj);
         }
+        
+        ofSetColor(255, 255, 255);
     }
     
     //--------------------------------------------------------------
@@ -427,5 +413,14 @@ namespace ofxKinectObjects {
                 background_n = (backgroundPoints[1]-backgroundPoints[0]).getCrossed(backgroundPoints[2]-backgroundPoints[0]).limit(1.0);
             }
         }
+    }
+    
+    vector<ofPoint> ofxCvPointQuadToOfPointQuad (vector<cv::Point> cvPointQuad){
+        vector<ofPoint> ofPointQuad;
+        ofPointQuad.push_back(ofPoint(cvPointQuad[0].x, cvPointQuad[0].y));
+        ofPointQuad.push_back(ofPoint(cvPointQuad[1].x, cvPointQuad[1].y));
+        ofPointQuad.push_back(ofPoint(cvPointQuad[2].x, cvPointQuad[2].y));
+        ofPointQuad.push_back(ofPoint(cvPointQuad[3].x, cvPointQuad[3].y));
+        return ofPointQuad;
     }
 }

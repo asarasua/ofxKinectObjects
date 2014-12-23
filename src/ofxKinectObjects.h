@@ -18,15 +18,18 @@ namespace ofxKinectObjects {
     
     class FloorObject{
     protected:
+        bool quadIntersects(vector<ofVec3f> quad);
+        
         //cv::Point2f center;
         float area_;
-        ofVec2f center_;
+//        ofVec2f center_;
         ofVec3f worldCoordinates_;
+        vector<ofPoint> quad_;
         unsigned int category_, touchedBy_;
         bool updated_;
     public:
         FloorObject(){};
-        FloorObject(float area, ofVec3f worldCoordinates);
+        FloorObject(float area, ofVec3f worldCoordinates, vector<ofVec3f> quad);
         
         //Hand events handlers
         void handOn(HandOnEvent &e);
@@ -34,6 +37,8 @@ namespace ofxKinectObjects {
         
         void setArea (float area);
         float getArea();
+        
+        void setQuad(vector<ofPoint> quad);
         
         void setWorldCoordinates(ofVec3f worldCoordinates);
         ofVec3f getWorldCoordinates();
@@ -93,6 +98,8 @@ namespace ofxKinectObjects {
         ofVec3f background_n;
         ofVec3f background_v0;        
     };
+    
+    vector<ofPoint> ofxCvPointQuadToOfPointQuad (vector<cv::Point> cvPointQuad);
     
 } //namespace ofxKinectObjects
 
